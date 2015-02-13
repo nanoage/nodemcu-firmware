@@ -15,6 +15,102 @@
 #include "user_interface.h"
 #include "flash_api.h"
 
+//Additions
+
+
+// Lua: restore()
+static int node_restore( lua_State* L )
+{
+  system_restore();
+  return 0;  
+}
+// Lua: readADC() , return system adc
+static int node_readADC( lua_State* L )
+{
+  unsigned val = 0xFFFF & system_adc_read();
+  lua_pushinteger( L, val );
+  return 1; 
+}
+static int node_get_rtc_time( lua_State* L )
+{
+  unsigned val = system_get_rtc_time();
+  lua_pushinteger( L, val );
+  return 1; 
+}
+
+static int node_get_rtc_calib( lua_State* L )
+{
+  unsigned val = system_rtc_clock_cali_proc();
+  lua_pushinteger( L, val );
+  return 1; 
+}
+// Lua: readRTCMem(block,size)
+
+static int node_read_rtc_mem( lua_State* L ){
+  int block = 0;
+  int size = 0 ;
+  
+  luaL_Buffer b;
+ 
+  luaL_buffinit(L, &b);
+  char *p = luaL_prepbuffer(&b);
+
+  if ( lua_isnumber(L, 2) )
+  {
+    size = lua_tointeger(L, 2);
+    if(size < 0 || size>LUAL_BUFFERSIZE) 
+      return luaL_error( L, "incorrect size" );
+  }
+  if ( lua_isnumber(L, 1) )
+  {
+    block = lua_tointeger(L, 1);
+    if ( block < 0 || ( (block<<2) + size) > (512+256))
+      return luaL_error( L, "memory overrun" );
+    if ( block % 4 != 0)
+      return luaL_error( L, "not on 4 block boundary" );
+  }
+
+  if (!system_rtc_mem_read(block, p ,size)){
+      return luaL_error( L, "rtc mem read failed" );  
+  }
+  
+  luaL_addsize(&b, size);
+  luaL_pushresult(&b);  /* close buffer */
+  //return (lua_objlen(L, -1) > 0);  /* check whether read something */
+
+  return 1;
+  }
+
+// Lua: writeRTCMem(offset , bytes )
+
+static int node_write_rtc_mem( lua_State* L ){
+  int block=0;	
+  int size=0;
+
+  const void *s = luaL_checklstring(L, 2, &size);
+  if(s == NULL || size <= 0) 
+      return luaL_error( L, "byte string incorrect" );
+  
+  if ( lua_isnumber(L, 1) )
+  {
+    block = lua_tointeger(L, 1);
+    if ( block < 0 || ( (block<<2) + size) > (512+256))
+      return luaL_error( L, "memory overrun" );
+    if ( block % 4 != 0)
+      return luaL_error( L, "not on 4 block boundary" );
+  }
+  
+
+  if (!system_rtc_mem_write(block, s ,size)){
+      return luaL_error( L, "rtc mem write failed" );  
+  }
+  
+  return 1;
+}  
+
+
+
+
 // Lua: restart()
 static int node_restart( lua_State* L )
 {
@@ -330,7 +426,15 @@ const LUA_REG_TYPE node_map[] =
   { LSTRKEY( "input" ), LFUNCVAL( node_input ) },
   { LSTRKEY( "output" ), LFUNCVAL( node_output ) },
   { LSTRKEY( "readvdd33" ), LFUNCVAL( node_readvdd33) },
-// Combined to dsleep(us, option)  
+  { LSTRKEY( "readADC" ), LFUNCVAL( node_readADC) },  
+  { LSTRKEY( "getRTCTime" ), LFUNCVAL( node_get_rtc_time) },
+
+  { LSTRKEY( "getRTCCalib" ), LFUNCVAL( node_get_rtc_calib) },
+
+  { LSTRKEY( "readRTCMem" ), LFUNCVAL( node_read_rtc_mem) },
+  { LSTRKEY( "writeRTCMem" ), LFUNCVAL( node_write_rtc_mem) },
+
+  // Combined to dsleep(us, option)  
 // { LSTRKEY( "dsleepsetoption" ), LFUNCVAL( node_deepsleep_setoption) },
 #if LUA_OPTIMIZE_MEMORY > 0
 
